@@ -55,6 +55,20 @@ The CLI connects to `ws://server/stream` with `Authorization: Bearer <jwt>` on t
 {"type": "stream_started", "stream_id": "01HXYZ...", "url": "https://aistreamer.dev/s/01HXYZ..."}
 ```
 
+The stream URL uses the stream ULID only (not username). This is canonical — the CLI spec's `/s/em/abc123` format is superseded by this spec.
+
+**Protocol version validation:** The server checks `protocol_version` in `stream_start`. If unsupported, it responds with:
+```json
+{"type": "error", "message": "Unsupported protocol version. Please update your CLI."}
+```
+and closes the connection. Currently only version `1` is supported.
+
+**Resize handling:** The CLI may send resize events (`{"ch": "term", "type": "resize", ...}`). The server updates `metadata.cols` and `metadata.rows` in the active stream so that viewer snapshots include current dimensions. Resize messages are forwarded to viewers like any other message.
+
+```ignored
+(section continues below)
+```
+
 3. **CLI streams messages for the duration of the session:**
 ```json
 {"ch": "term", "data": "<base64>", "ts": 1710720000}
@@ -95,6 +109,18 @@ Viewers connect to `ws://server/watch/:streamId`. No authentication required.
 - Removed on disconnect
 - Viewer count of 0 is fine — broadcaster continues regardless
 - No messages flow from viewer to broadcaster (read-only)
+- When the broadcaster disconnects or ends the stream, viewers receive:
+```json
+{"type": "stream_ended"}
+```
+
+### Connection Health
+
+Both broadcaster and viewer WebSocket connections use ping/pong heartbeats:
+- Server sends a `ping` frame every 30 seconds
+- If no `pong` is received within 10 seconds, the connection is considered dead and terminated
+- Dead broadcaster connections trigger stream cleanup (same as unexpected disconnect)
+- Dead viewer connections are removed from the viewer set
 
 ## REST API
 
@@ -168,6 +194,8 @@ All endpoints return JSON. CORS enabled for the viewer web app origin.
 8. Issues JWT containing `{sub: userId, username: githubUsername}`
 9. Redirects to `http://localhost:{callback_port}/callback?token=<jwt>&user_id=<id>&username=<username>&avatar_url=<url>`
 
+Note: The CLI must parse all four callback parameters (`token`, `user_id`, `username`, `avatar_url`) and store them in `~/.aistreamer/config.json`. The CLI spec should be updated to match.
+
 ### JWT
 
 - Signed with `HS256` using a server secret (env var `JWT_SECRET`)
@@ -219,6 +247,13 @@ ORDER BY (stream_id, ts);
 
 All `term` and `meta` messages from broadcasters are appended here. This enables future stream replay and analytics.
 
+### ClickHouse Insert Strategy
+
+Events are batched in memory and flushed to ClickHouse periodically:
+- Flush every 5 seconds OR when the batch reaches 100 events, whichever comes first
+- If ClickHouse is unavailable, the batch is dropped with a warning log (not critical path)
+- Each flush is a single bulk insert for efficiency
+
 ## StreamManager
 
 The in-memory pub/sub abstraction:
@@ -263,9 +298,26 @@ The `broadcast()` method iterates the viewer Set directly. To scale to multiple 
 
 The `buffer` accumulates raw terminal bytes for viewer catch-up snapshots. To prevent unbounded growth:
 - Buffer is capped at 1MB
-- When exceeded, the oldest half is discarded (viewers joining very late may miss early output — acceptable for live streaming)
+- When exceeded, the oldest half is discarded, preceded by a terminal reset sequence (`\x1bc`) to clear any broken ANSI state. Viewers joining after truncation may miss early output — acceptable for live streaming.
 
-## Project Structure
+### Concurrent Streams
+
+One active stream per user. If a user starts a new stream while one is already live, the server ends the existing stream (marks as ended in Postgres, notifies viewers, cleans up StreamManager) before registering the new one.
+
+## Monorepo Layout
+
+```
+aistreamer/
+├── src/                    — CLI broadcaster (sub-system 1)
+├── server/                 — Backend server (sub-system 2)
+├── web/                    — Viewer web app (sub-system 3, future)
+├── shared/                 — Shared types (protocol.ts)
+├── docs/
+├── package.json            — CLI package
+└── tsconfig.json           — CLI tsconfig
+```
+
+## Project Structure (server/)
 
 ```
 server/
@@ -327,6 +379,11 @@ CORS_ORIGIN=http://localhost:5173
 - Shared protocol types between CLI and server
 - CORS for viewer web app
 - Buffer cap (1MB) to prevent memory leaks
+- WebSocket ping/pong heartbeat (30s interval, 10s timeout) for both broadcaster and viewer connections
+- ClickHouse batched inserts (flush every 5 seconds or 100 events)
+- One active stream per user (new stream ends the existing one)
+- Default limit of 50 on `GET /api/streams` (pagination deferred)
+- Graceful shutdown (SIGTERM: mark active streams as ended, notify viewers, drain connections)
 
 ### Out of Scope (Future)
 - Comments / chat system
@@ -347,6 +404,7 @@ CORS_ORIGIN=http://localhost:5173
 - **ClickHouse unavailable:** Log warning, continue relay. Events are dropped (acceptable for MVP — not critical path)
 - **Invalid JWT on upgrade:** Reject with 401 before WebSocket is established
 - **GitHub OAuth fails:** Redirect to CLI callback with error parameter
+- **Server shutdown (SIGTERM):** Mark all active streams as ended in Postgres, send `stream_ended` to all viewers, close all WebSocket connections, drain database connections, then exit
 
 ## Security Considerations
 
