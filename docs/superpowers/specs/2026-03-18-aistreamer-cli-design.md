@@ -43,15 +43,28 @@ All data flows over a single WebSocket connection using two logical channels:
 
 ### Connection Lifecycle
 
-1. CLI authenticates WebSocket with JWT token in query param
-2. Sends `stream_start` message with metadata (title, agent type, terminal dimensions)
-3. Streams `term` and `meta` messages for the duration of the session
-4. Sends `stream_end` on exit
-5. Server can send messages back (future: viewer chat, commands)
+1. CLI opens WebSocket connection (unauthenticated)
+2. Sends `auth` message as the first frame: `{"type": "auth", "token": "<jwt>"}`
+3. Server responds with `auth_ok` or `auth_error`
+4. Sends `stream_start` message with metadata (title, agent type, terminal dimensions, protocol version)
+5. Server responds with `stream_started` containing the stream URL
+6. Streams `term` and `meta` messages for the duration of the session
+7. Forwards terminal resize events as they occur
+8. Sends `stream_end` on exit
+9. Server can send messages back (future: viewer chat, commands)
 
 ```json
+// auth
+{"type": "auth", "token": "eyJhbG..."}
+
 // stream_start
-{"type": "stream_start", "title": "Building auth", "agent": "claude-code", "cols": 120, "rows": 40}
+{"type": "stream_start", "title": "Building auth", "agent": "claude-code", "cols": 120, "rows": 40, "protocol_version": 1}
+
+// stream_started (from server)
+{"type": "stream_started", "stream_id": "abc123", "url": "https://aistreamer.dev/s/em/abc123"}
+
+// resize (sent on SIGWINCH)
+{"ch": "term", "type": "resize", "cols": 140, "rows": 50, "ts": 1710720005}
 
 // stream_end
 {"type": "stream_end", "reason": "exit", "exit_code": 0, "duration_s": 3600}
@@ -161,7 +174,7 @@ The Unix socket approach is chosen because:
 | Event | Source Hook | Fields |
 |-------|-----------|--------|
 | `tool_start` | PreToolUse | tool, file (if applicable) |
-| `tool_end` | PostToolUse | tool, success, duration_ms |
+| `tool_end` | PostToolUse | tool, success, duration_ms (computed by CLI from tool_start timestamp) |
 | `file_change` | PostToolUse (Edit/Write) | path, action, lines_changed |
 | `agent_message` | Notification | role, summary |
 
@@ -172,6 +185,13 @@ On exit (normal or Ctrl+C):
 2. If the file was created by aistreamer and is now empty, delete it
 3. Remove Unix socket file
 4. Close WebSocket connection
+
+### Stale Hook Recovery
+
+If the CLI is killed with SIGKILL or crashes, hooks and socket files may be left behind. On startup, the CLI:
+1. Checks `.claude/settings.local.json` for hooks tagged with an aistreamer session ID
+2. If the PID in the session ID is no longer alive, removes the stale hooks
+3. Cleans up any orphaned `/tmp/aistreamer-*.sock` files whose owning PID is dead
 
 ## Project Structure
 
@@ -213,6 +233,9 @@ aistreamer/
 - Stream title flag (`--title`)
 - Clean hook cleanup on exit (normal and Ctrl+C)
 - Graceful signal handling
+- Terminal resize forwarding (SIGWINCH)
+- Output batching (16ms / ~60fps) with backpressure handling
+- Stale hook recovery on startup
 
 ### Out of Scope (Future)
 - Ghostty SDK integration for terminal state snapshots
@@ -232,11 +255,12 @@ aistreamer/
 - **Hook installation fails:** Warn user, fall back to raw-only streaming
 - **PTY spawn fails:** Print error with the failed command, exit with code 1
 - **Auth token expired:** Prompt user to run `aistreamer login` again
+- **Backpressure:** Terminal output is batched at ~60fps (16ms intervals). If the WebSocket write buffer exceeds 1MB, frames are dropped with a warning logged to stderr. The PTY and local terminal are never blocked — streaming degrades gracefully.
 
 ## Security Considerations
 
 - JWT tokens stored with `0600` file permissions
 - Hooks are installed in `.claude/settings.local.json` (project-local, not global)
 - Unix socket created with `0600` permissions
-- No sensitive data (API keys, env vars) is captured — only PTY output that the user sees
+- **PTY output may contain sensitive data.** If the agent reads `.env` files, prints API keys in errors, or displays credentials, these will be streamed. The CLI prints a clear warning at stream start: "Your terminal output is being broadcast publicly." Future: configurable regex scrubber for common secret patterns.
 - Stream URL uses a random ID, not predictable
