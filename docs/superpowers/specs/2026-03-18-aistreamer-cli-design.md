@@ -43,10 +43,9 @@ All data flows over a single WebSocket connection using two logical channels:
 
 ### Connection Lifecycle
 
-1. CLI opens WebSocket connection (unauthenticated)
-2. Sends `auth` message as the first frame: `{"type": "auth", "token": "<jwt>"}`
-3. Server responds with `auth_ok` or `auth_error`
-4. Sends `stream_start` message with metadata (title, agent type, terminal dimensions, protocol version)
+1. CLI opens WebSocket connection with JWT in the HTTP upgrade header: `Authorization: Bearer <jwt>`
+2. Server validates token during upgrade — rejects with 401 if invalid
+3. Sends `stream_start` message with metadata (title, agent type, terminal dimensions, protocol version)
 5. Server responds with `stream_started` containing the stream URL
 6. Streams `term` and `meta` messages for the duration of the session
 7. Forwards terminal resize events as they occur
@@ -54,9 +53,6 @@ All data flows over a single WebSocket connection using two logical channels:
 9. Server can send messages back (future: viewer chat, commands)
 
 ```json
-// auth
-{"type": "auth", "token": "eyJhbG..."}
-
 // stream_start
 {"type": "stream_start", "title": "Building auth", "agent": "claude-code", "cols": 120, "rows": 40, "protocol_version": 1}
 
