@@ -20,7 +20,7 @@ export function createApiRouter(mgr: StreamManager, pool: DbPool | null, jwtSecr
     res.json({ streams });
   });
 
-  router.get('/streams/:id', async (req: Request, res: Response) => {
+  router.get('/streams/:id', async (req: Request<{ id: string }>, res: Response) => {
     const stream = mgr.getStream(req.params.id);
     if (stream) {
       res.json({

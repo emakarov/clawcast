@@ -51,7 +51,7 @@ export async function handleBroadcasterMessage(
 
     if (pool) {
       try {
-        await dbCreateStream(pool, { id: streamId, userId, ...metadata });
+        await dbCreateStream(pool, { id: streamId, ...metadata });
       } catch (err) {
         console.error('[aistreamer] Failed to create stream in DB:', err);
       }
