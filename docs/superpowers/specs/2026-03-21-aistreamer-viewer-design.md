@@ -86,10 +86,15 @@ Default: collapsed on watch page to maximize terminal space.
 
 #### Center Panel: Terminal
 
-- **Header bar:** stream title, `@username`, viewer count, live duration
-- **Terminal area:** xterm.js instance filling the remaining space
-- Uses `@xterm/addon-fit` to auto-resize to container dimensions
+- **Header bar:** stream title, `@username`, viewer count (polled), live duration
+- **Terminal area:** xterm.js instance sized to the broadcaster's dimensions
+- Terminal is initialized with `cols`/`rows` from the `snapshot` message, not auto-fitted to container
+- If the broadcaster's terminal is larger than the viewport, the container scrolls horizontally
+- `@xterm/addon-fit` is NOT used — viewer terminal must match broadcaster dimensions exactly
+- `@xterm/addon-webgl` used for GPU-accelerated rendering (high-throughput streams)
 - Dark terminal background (always dark, regardless of app theme)
+
+**Viewer count:** Polled from `GET /api/streams/:streamId` every 10 seconds. Not available via WebSocket.
 
 #### Right Panel: Activity Feed
 
@@ -122,8 +127,8 @@ The feed auto-scrolls to the latest event. Maximum 100 events kept in state (old
 ### Connection Flow
 
 1. Component mounts → connect to `ws://server/watch/:streamId`
-2. Receive `snapshot` message → decode base64, write to xterm.js terminal
-3. Receive `term` messages → decode base64, write to xterm.js
+2. Receive `snapshot` message → resize terminal to broadcaster's cols/rows, decode base64 to Uint8Array, write to xterm.js
+3. Receive `term` messages → if resize, call `terminal.resize(cols, rows)`; if data, decode base64 to Uint8Array, write to xterm.js
 4. Receive `meta` messages → append to activity feed state
 5. Receive `stream_ended` → show "Stream ended" overlay on terminal
 6. Receive `error` → show error state (stream not found)
@@ -136,9 +141,13 @@ The feed auto-scrolls to the latest event. Maximum 100 events kept in state (old
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
 
+  // Helper: decode base64 to Uint8Array (not atob — handles binary/UTF-8 correctly)
+  const decodeBase64 = (b64: string) => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+
   switch (msg.type) {
     case 'snapshot':
-      terminal.write(atob(msg.data));
+      terminal.resize(msg.cols, msg.rows);
+      terminal.write(decodeBase64(msg.data));
       setStreamInfo({ title: msg.title, agent: msg.agent, cols: msg.cols, rows: msg.rows });
       break;
     case 'stream_ended':
@@ -149,8 +158,12 @@ ws.onmessage = (event) => {
       break;
   }
 
-  if (msg.ch === 'term' && msg.data) {
-    terminal.write(atob(msg.data));
+  if (msg.ch === 'term') {
+    if (msg.type === 'resize') {
+      terminal.resize(msg.cols, msg.rows);
+    } else if (msg.data) {
+      terminal.write(decodeBase64(msg.data));
+    }
   }
 
   if (msg.ch === 'meta') {
@@ -159,9 +172,13 @@ ws.onmessage = (event) => {
 };
 ```
 
-### Terminal Resize
+### Terminal Sizing
 
-The terminal uses `@xterm/addon-fit` to automatically fit the container. The terminal dimensions are read-only for viewers — they display whatever the broadcaster's terminal size is (set in the `snapshot` message).
+The viewer terminal uses the broadcaster's dimensions, not the container size. The terminal is initialized from the `snapshot` message's `cols`/`rows` and updated when resize messages arrive (`{"ch": "term", "type": "resize", "cols": N, "rows": N}`). `@xterm/addon-fit` is not used — the terminal must match the broadcaster exactly to avoid line-wrapping artifacts.
+
+### Reconnection
+
+On reconnection, `terminal.reset()` must be called before writing the new snapshot to avoid doubled output. The server sends a fresh snapshot on each viewer connect.
 
 ## UI States
 
@@ -240,7 +257,7 @@ web/
 | `react`, `react-dom` | UI framework |
 | `react-router-dom` | Client-side routing |
 | `@xterm/xterm` | Terminal rendering |
-| `@xterm/addon-fit` | Auto-resize terminal |
+| `@xterm/addon-webgl` | GPU-accelerated terminal rendering |
 | `tailwindcss` | Styling |
 | `class-variance-authority` | shadcn component variants |
 | `clsx`, `tailwind-merge` | shadcn utility |
@@ -264,7 +281,9 @@ export default defineConfig({
 });
 ```
 
-Production: served by a static file server or CDN, configured with `VITE_API_URL` env var.
+Production: served by a static file server or CDN. Configure via env vars:
+- `VITE_API_URL` — REST API base URL (e.g., `https://aistreamer.dev`)
+- WebSocket URL is derived from `VITE_API_URL` by replacing `https://` with `wss://` (or `http://` with `ws://`)
 
 ## MVP Scope
 
