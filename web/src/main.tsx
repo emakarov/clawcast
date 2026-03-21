@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import './index.css'
 import App from './App'
 import { BrowsePage } from '@/pages/browse'
+import { WatchPage } from '@/pages/watch'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -11,7 +12,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<BrowsePage />} />
-          <Route path="s/:streamId" element={<div>Watch (coming soon)</div>} />
+          <Route path="s/:streamId" element={<WatchPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
