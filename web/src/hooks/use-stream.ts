@@ -47,7 +47,7 @@ export function useStream(streamId: string) {
     })
   }, [])
 
-  const connectRef = useRef<() => void>()
+  const connectRef = useRef<(() => void) | undefined>(undefined)
 
   connectRef.current = () => {
     const ws = new WebSocket(getWsUrl(streamId))

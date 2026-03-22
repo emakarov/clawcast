@@ -3,7 +3,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { ActivityEventRow } from '@/components/activity-event'
 import type { ActivityEvent } from '@/lib/types'
 
-export function ActivityFeed({ events, agent, startedAt, className }: {
+export function ActivityFeed({ events, agent, startedAt: _startedAt, className }: {
   events: ActivityEvent[]
   agent?: string
   startedAt?: string

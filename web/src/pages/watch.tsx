@@ -72,15 +72,13 @@ export function WatchPage() {
       {/* Mobile: floating button + bottom sheet */}
       <div className="lg:hidden fixed bottom-4 right-4 z-20">
         <Sheet>
-          <SheetTrigger asChild>
-            <Button size="icon" variant="secondary" className="rounded-full shadow-lg h-12 w-12">
-              <Activity className="h-5 w-5" />
-              {events.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] rounded-full h-5 w-5 flex items-center justify-center">
-                  {events.length}
-                </span>
-              )}
-            </Button>
+          <SheetTrigger render={<Button size="icon" variant="secondary" className="rounded-full shadow-lg h-12 w-12" />}>
+            <Activity className="h-5 w-5" />
+            {events.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[10px] rounded-full h-5 w-5 flex items-center justify-center">
+                {events.length}
+              </span>
+            )}
           </SheetTrigger>
           <SheetContent side="bottom" className="h-[60vh] p-0">
             <ActivityFeed

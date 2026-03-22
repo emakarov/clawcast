@@ -24,11 +24,9 @@ export function AppSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link to="/">
-                <MonitorPlay className="h-5 w-5" />
-                <span className="font-bold">aistreamer</span>
-              </Link>
+            <SidebarMenuButton size="lg" render={<Link to="/" />}>
+              <MonitorPlay className="h-5 w-5" />
+              <span className="font-bold">aistreamer</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -39,11 +37,9 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={location.pathname === '/'}>
-                  <Link to="/">
-                    <Radio className="h-4 w-4" />
-                    <span>Browse</span>
-                  </Link>
+                <SidebarMenuButton render={<Link to="/" />} isActive={location.pathname === '/'}>
+                  <Radio className="h-4 w-4" />
+                  <span>Browse</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -56,13 +52,11 @@ export function AppSidebar() {
               <SidebarMenu>
                 {streams.slice(0, 5).map((s) => (
                   <SidebarMenuItem key={s.id}>
-                    <SidebarMenuButton asChild isActive={location.pathname === `/s/${s.id}`}>
-                      <Link to={`/s/${s.id}`}>
-                        <span className="relative flex h-2 w-2 shrink-0">
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                        </span>
-                        <span className="truncate text-xs">@{s.user.username} · {s.title || 'Untitled'}</span>
-                      </Link>
+                    <SidebarMenuButton render={<Link to={`/s/${s.id}`} />} isActive={location.pathname === `/s/${s.id}`}>
+                      <span className="relative flex h-2 w-2 shrink-0">
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                      </span>
+                      <span className="truncate text-xs">@{s.user.username} · {s.title || 'Untitled'}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}

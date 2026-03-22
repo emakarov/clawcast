@@ -13,9 +13,7 @@ export function StreamEndedOverlay({ type }: { type: 'ended' | 'error' }) {
             ? 'The broadcaster has ended their session.'
             : "This stream doesn't exist or has already ended."}
         </p>
-        <Button asChild>
-          <Link to="/">Browse streams</Link>
-        </Button>
+        <Button render={<Link to="/" />}>Browse streams</Button>
       </div>
     </div>
   )
