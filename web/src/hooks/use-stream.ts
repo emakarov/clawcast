@@ -1,20 +1,28 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { WebglAddon } from '@xterm/addon-webgl'
 import { getWsUrl } from '@/lib/api'
+import { TerminalBuffer } from '@/lib/terminal-buffer'
 import type { ActivityEvent, StreamState } from '@/lib/types'
 
 const MAX_EVENTS = 100
 const MAX_RETRIES = 3
 const RETRY_DELAYS = [1000, 2000, 4000]
 
-function decodeBase64(b64: string): Uint8Array {
+function decodeBase64(b64: string): string {
   const binary = atob(b64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i)
   }
-  return bytes
+  return new TextDecoder().decode(bytes)
+}
+
+// Strip ANSI codes for plain text export
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+    .replace(/\x1b\][0-9;]*\x07/g, '')
+    .replace(/\x1b[=>]/g, '')
+    .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '')
 }
 
 interface StreamInfo {
@@ -25,15 +33,17 @@ interface StreamInfo {
 }
 
 export function useStream(streamId: string) {
-  const terminalRef = useRef<Terminal | null>(null)
-  const containerRef = useRef<HTMLDivElement | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const retryCount = useRef(0)
   const stateRef = useRef<StreamState>('connecting')
+  const terminalBufferRef = useRef<TerminalBuffer | null>(null)
+  const updateTimerRef = useRef<number | null>(null)
+  const pendingUpdateRef = useRef(false)
 
   const [state, setState] = useState<StreamState>('connecting')
   const [streamInfo, setStreamInfo] = useState<StreamInfo | null>(null)
   const [events, setEvents] = useState<ActivityEvent[]>([])
+  const [htmlContent, setHtmlContent] = useState<string>('')
 
   const setStreamState = useCallback((s: StreamState) => {
     stateRef.current = s
@@ -47,9 +57,24 @@ export function useStream(streamId: string) {
     })
   }, [])
 
-  const connectRef = useRef<(() => void) | undefined>(undefined)
+  // Throttle display updates to reduce flickering
+  const scheduleUpdate = useCallback(() => {
+    pendingUpdateRef.current = true
 
-  connectRef.current = () => {
+    if (updateTimerRef.current === null) {
+      updateTimerRef.current = window.setTimeout(() => {
+        if (pendingUpdateRef.current && terminalBufferRef.current) {
+          setHtmlContent(terminalBufferRef.current.toHTML())
+          pendingUpdateRef.current = false
+        }
+        updateTimerRef.current = null
+      }, 50) // Update every 50ms max (20 FPS)
+    }
+  }, [])
+
+  const connectRef = useRef<((scheduleUpdateFn: () => void) => void) | undefined>(undefined)
+
+  connectRef.current = (scheduleUpdateFn: () => void) => {
     const ws = new WebSocket(getWsUrl(streamId))
     wsRef.current = ws
 
@@ -57,12 +82,22 @@ export function useStream(streamId: string) {
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
-      const terminal = terminalRef.current
-      if (!terminal) return
+      const buffer = terminalBufferRef.current
 
       if (msg.type === 'snapshot') {
-        terminal.resize(msg.cols, msg.rows)
-        terminal.write(decodeBase64(msg.data))
+        console.log('[aistreamer] Received snapshot')
+        const data = decodeBase64(msg.data)
+
+        if (buffer) {
+          // Match broadcaster's terminal size for correct cursor positioning
+          if (msg.cols && msg.rows) {
+            buffer.resize(msg.cols, msg.rows)
+          }
+          buffer.reset()
+          buffer.write(data)
+          scheduleUpdateFn()
+        }
+
         setStreamInfo({ title: msg.title, agent: msg.agent, cols: msg.cols, rows: msg.rows })
         setStreamState('connected')
       } else if (msg.type === 'stream_ended') {
@@ -72,10 +107,15 @@ export function useStream(streamId: string) {
       }
 
       if (msg.ch === 'term') {
-        if (msg.type === 'resize') {
-          terminal.resize(msg.cols, msg.rows)
+        if (msg.type === 'resize' && buffer && msg.cols && msg.rows) {
+          buffer.resize(msg.cols, msg.rows)
+          scheduleUpdateFn()
         } else if (msg.data) {
-          terminal.write(decodeBase64(msg.data))
+          const data = decodeBase64(msg.data)
+          if (buffer) {
+            buffer.write(data)
+            scheduleUpdateFn()
+          }
         }
       }
 
@@ -103,8 +143,7 @@ export function useStream(streamId: string) {
         const delay = RETRY_DELAYS[retryCount.current] || 4000
         retryCount.current++
         setTimeout(() => {
-          if (terminalRef.current) terminalRef.current.reset()
-          connectRef.current?.()
+          connectRef.current?.(scheduleUpdate)
         }, delay)
       } else {
         setStreamState('error')
@@ -114,38 +153,43 @@ export function useStream(streamId: string) {
     ws.onerror = () => {}
   }
 
-  const initTerminal = useCallback((container: HTMLDivElement) => {
-    if (terminalRef.current) return
-    containerRef.current = container
-
-    const terminal = new Terminal({
-      cursorBlink: false,
-      disableStdin: true,
-      theme: { background: '#0d0d1a', foreground: '#e2e8f0', cursor: '#e2e8f0' },
-      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
-      fontSize: 14,
-    })
-
-    terminal.open(container)
-
-    try {
-      const webglAddon = new WebglAddon()
-      terminal.loadAddon(webglAddon)
-    } catch {
-      // WebGL not available, fall back to canvas
+  const initTerminal = useCallback(() => {
+    if (terminalBufferRef.current) {
+      console.log('[aistreamer] Terminal buffer already initialized, skipping')
+      return
     }
 
-    terminalRef.current = terminal
-    connectRef.current?.()
-  }, [])
+    console.log('[aistreamer] Initializing terminal buffer')
+    terminalBufferRef.current = new TerminalBuffer()
+
+    connectRef.current?.(scheduleUpdate)
+  }, [scheduleUpdate])
 
   useEffect(() => {
     return () => {
       wsRef.current?.close()
-      terminalRef.current?.dispose()
-      terminalRef.current = null
+      if (updateTimerRef.current !== null) {
+        clearTimeout(updateTimerRef.current)
+      }
     }
   }, [])
 
-  return { state, streamInfo, events, initTerminal }
+  const downloadLog = useCallback(() => {
+    const buffer = terminalBufferRef.current
+    if (!buffer) return
+
+    // Get the final rendered state (what you see on screen), then strip ANSI codes
+    const content = stripAnsi(buffer.toPlainText())
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stream-${streamId}-${new Date().toISOString()}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [streamId])
+
+  return { state, streamInfo, events, htmlContent, initTerminal, downloadLog }
 }

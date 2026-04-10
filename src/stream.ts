@@ -117,12 +117,12 @@ export class StreamClient {
 
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnects) {
-      process.stderr.write('\x1b[33m[aistreamer] Lost connection. Continuing without streaming.\x1b[0m\n');
+      process.stderr.write('\x1b[33m[clawcast] Lost connection. Continuing without streaming.\x1b[0m\n');
       return;
     }
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 8000);
-    process.stderr.write(`\x1b[33m[aistreamer] Reconnecting (attempt ${this.reconnectAttempts}/${this.maxReconnects})...\x1b[0m\n`);
+    process.stderr.write(`\x1b[33m[clawcast] Reconnecting (attempt ${this.reconnectAttempts}/${this.maxReconnects})...\x1b[0m\n`);
     setTimeout(() => {
       if (this.connected) return;
       this.ws = new WebSocket(this.url, {
@@ -132,7 +132,7 @@ export class StreamClient {
         this.connected = true;
         this.reconnectAttempts = 0;
         this.startBatching();
-        process.stderr.write('\x1b[32m[aistreamer] Reconnected!\x1b[0m\n');
+        process.stderr.write('\x1b[32m[clawcast] Reconnected!\x1b[0m\n');
       });
       this.ws.on('close', () => {
         this.connected = false;
@@ -155,7 +155,7 @@ export class StreamClient {
   queueTermData(data: Buffer): void {
     const bufferSize = this.buffer.reduce((sum, b) => sum + b.length, 0);
     if (bufferSize > MAX_BUFFER_BYTES) {
-      process.stderr.write('\x1b[33m[aistreamer] Warning: dropping frames (backpressure)\x1b[0m\n');
+      process.stderr.write('\x1b[33m[clawcast] Warning: dropping frames (backpressure)\x1b[0m\n');
       this.buffer = [];
       return;
     }

@@ -15,4 +15,11 @@ export const config = {
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   baseUrl: process.env.BASE_URL || `http://localhost:${process.env.PORT || '3000'}`,
+  r2: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
+    endpoint: process.env.R2_ENDPOINT || '',
+    bucketRecordings: process.env.R2_BUCKET_RECORDINGS || 'clawcast-recordings',
+    prefix: process.env.R2_PREFIX || 'dev',
+  },
 };

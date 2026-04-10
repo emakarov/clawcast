@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import process from 'node:process';
 import type { StreamClient } from './stream.js';
 
@@ -10,6 +11,7 @@ export interface ParsedArgs {
   args: string[];
   title?: string;
   server?: string;
+  noOpen?: boolean;
 }
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -22,6 +24,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       result.title = argv[++i];
     } else if (arg === '--server' && i + 1 < argv.length) {
       result.server = argv[++i];
+    } else if (arg === '--no-open') {
+      result.noOpen = true;
     } else if (arg === '--') {
       // Everything after -- is the command + args
       result.command = argv[i + 1];
@@ -54,12 +58,13 @@ async function runStream(parsed: ParsedArgs): Promise<void> {
 
   const config = readConfig();
   if (!config) {
-    console.error('\x1b[33m[aistreamer]\x1b[0m Not logged in. Run: aistreamer login to enable streaming.');
+    console.error('\x1b[33m[clawcast]\x1b[0m Not logged in. Run: clawcast login to enable streaming.');
   }
 
+  // Default to claude if no command specified
   if (!parsed.command) {
-    console.error('\x1b[31m[aistreamer]\x1b[0m No command specified. Usage: aistreamer <command>');
-    process.exit(1);
+    parsed.command = 'claude';
+    parsed.args = [];
   }
 
   const agentType = detectAgent(parsed.command);
@@ -92,10 +97,10 @@ async function runStream(parsed: ParsedArgs): Promise<void> {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('401') || msg.includes('Unauthorized')) {
-        console.error('\x1b[31m[aistreamer]\x1b[0m Auth token expired. Run: aistreamer login');
+        console.error('\x1b[31m[clawcast]\x1b[0m Auth token expired. Run: clawcast login');
         process.exit(1);
       }
-      console.error(`\x1b[33m[aistreamer]\x1b[0m Could not connect to server. Running without streaming.`);
+      console.error(`\x1b[33m[clawcast]\x1b[0m Could not connect to server. Running without streaming.`);
     }
   }
 
@@ -122,15 +127,23 @@ async function runStream(parsed: ParsedArgs): Promise<void> {
         stream?.sendMetaEvent(event);
       });
     } catch {
-      console.error(`\x1b[33m[aistreamer]\x1b[0m Could not install Claude Code hooks. Streaming raw only.`);
+      console.error(`\x1b[33m[clawcast]\x1b[0m Could not install Claude Code hooks. Streaming raw only.`);
     }
   }
 
-  // Print stream info
+  // Print stream info and open browser
   if (streamUrl) {
-    console.error(`\x1b[36m[aistreamer]\x1b[0m \x1b[1mLive at ${streamUrl}\x1b[0m`);
-    console.error(`\x1b[33m[aistreamer]\x1b[0m Warning: Your terminal output is being broadcast publicly.`);
+    console.error(`\x1b[36m[clawcast]\x1b[0m \x1b[1mLive at ${streamUrl}\x1b[0m`);
+    console.error(`\x1b[33m[clawcast]\x1b[0m Warning: Your terminal output is being broadcast publicly.`);
     console.error('');
+    if (!parsed.noOpen) {
+      try {
+        const { default: open } = await import('open');
+        await open(streamUrl);
+      } catch {
+        // Ignore browser open failures
+      }
+    }
   }
 
   // Spawn PTY
@@ -192,16 +205,16 @@ async function main(): Promise<void> {
 
   if (parsed.subcommand === 'login') {
     const { loginFlow } = await import('./auth.js');
-    const server = parsed.server ?? 'https://aistreamer.dev';
+    const server = parsed.server ?? 'https://clawcast.tv';
     await loginFlow(server);
-    console.error('\x1b[32m[aistreamer]\x1b[0m Logged in successfully!');
+    console.error('\x1b[32m[clawcast]\x1b[0m Logged in successfully!');
     return;
   }
 
   if (parsed.subcommand === 'logout') {
     const { clearConfig } = await import('./auth.js');
     clearConfig();
-    console.error('\x1b[32m[aistreamer]\x1b[0m Logged out.');
+    console.error('\x1b[32m[clawcast]\x1b[0m Logged out.');
     return;
   }
 
@@ -211,16 +224,19 @@ async function main(): Promise<void> {
     if (config) {
       console.error(`Logged in as @${config.user.github_username} (via GitHub)`);
     } else {
-      console.error('Not logged in. Run: aistreamer login');
+      console.error('Not logged in. Run: clawcast login');
     }
     return;
   }
 
-  if (!parsed.command) {
-    console.error('Usage: aistreamer [--title <title>] [--server <url>] -- <command> [args...]');
-    console.error('       aistreamer login');
-    console.error('       aistreamer logout');
-    console.error('       aistreamer whoami');
+  if (!parsed.command && !parsed.subcommand && process.argv.includes('--help')) {
+    console.error('Usage: clawcast [--title <title>] [-- <command>]');
+    console.error('       clawcast                              # streams claude (default)');
+    console.error('       clawcast --title "My Session"         # streams claude with title');
+    console.error('       clawcast -- bash                      # streams bash instead');
+    console.error('       clawcast login                        # authenticate with GitHub');
+    console.error('       clawcast logout');
+    console.error('       clawcast whoami');
     process.exit(0);
   }
 
@@ -228,12 +244,15 @@ async function main(): Promise<void> {
 }
 
 // Only run main() when this file is executed directly, not when imported
+// Check if argv[1] contains 'cli' (works with symlinks and direct execution)
 const isDirectExecution = process.argv[1] &&
-  (process.argv[1].endsWith('/cli.ts') || process.argv[1].endsWith('/cli.js'));
+  (process.argv[1].includes('/cli.ts') ||
+   process.argv[1].includes('/cli.js') ||
+   process.argv[1].includes('clawcast'));
 
 if (isDirectExecution) {
   main().catch((err) => {
-    console.error(`\x1b[31m[aistreamer]\x1b[0m ${err.message}`);
+    console.error(`\x1b[31m[clawcast]\x1b[0m ${err.message}`);
     process.exit(1);
   });
 }

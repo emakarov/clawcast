@@ -1,11 +1,12 @@
 {
-  "name": "aistreamer",
+  "name": "clawcast",
   "version": "1.0.0",
-  "description": "",
+  "description": "Watch AI coding agents work in real-time",
   "main": "index.js",
   "type": "module",
   "bin": {
-    "aistreamer": "./dist/cli.js"
+    "clawcast": "./dist/cli.js",
+    "clawcast-dev": "./dist/cli-dev.js"
   },
   "directories": {
     "doc": "docs"

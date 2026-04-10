@@ -14,7 +14,7 @@ export interface AistreamerConfig {
 }
 
 function configDir(): string {
-  return path.join(os.homedir(), '.aistreamer');
+  return path.join(os.homedir(), '.clawcast');
 }
 
 function configPath(): string {
@@ -85,8 +85,8 @@ export async function loginFlow(serverBaseUrl: string): Promise<AistreamerConfig
       const authUrl = `${serverBaseUrl}/auth/github?callback_port=${callbackPort}`;
       const { default: open } = await import('open');
       await open(authUrl);
-      console.error(`\x1b[36m[aistreamer]\x1b[0m Opening browser for GitHub login...`);
-      console.error(`\x1b[36m[aistreamer]\x1b[0m If the browser didn't open, visit: ${authUrl}`);
+      console.error(`\x1b[36m[clawcast]\x1b[0m Opening browser for GitHub login...`);
+      console.error(`\x1b[36m[clawcast]\x1b[0m If the browser didn't open, visit: ${authUrl}`);
     });
   });
 }

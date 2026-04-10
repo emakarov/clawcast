@@ -9,6 +9,7 @@ import { createAuthRouter, verifyJwt, extractBearerToken } from './auth.js';
 import { createApiRouter } from './api.js';
 import { StreamManager } from './stream-manager.js';
 import { handleBroadcasterMessage } from './ws-broadcaster.js';
+import { stopRecording } from './recorder.js';
 import { handleViewerConnection } from './ws-viewer.js';
 import { startHeartbeat } from './heartbeat.js';
 
@@ -97,6 +98,9 @@ async function main() {
       stopHeartbeat();
       if (currentStreamId) {
         mgr.endStream(currentStreamId);
+        stopRecording(currentStreamId).catch((err) => {
+          console.error(`[clawcast] Recording upload failed for ${currentStreamId}:`, err);
+        });
         try { await dbEndStream(pool, currentStreamId); } catch {}
       }
     });

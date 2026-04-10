@@ -15,12 +15,17 @@ export async function fetchStream(id: string): Promise<StreamInfo> {
 }
 
 export function getWsUrl(streamId: string): string {
-  if (import.meta.env.VITE_API_URL) {
-    const base = import.meta.env.VITE_API_URL
+  const apiUrl = import.meta.env.VITE_API_URL
+  if (apiUrl) {
+    const base = apiUrl
       .replace('https://', 'wss://')
       .replace('http://', 'ws://')
-    return `${base}/watch/${streamId}`
+    return `${base}/ws/${streamId}`
   }
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/watch/${streamId}`
+  // Production: use current host. Development: use localhost.
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${window.location.host}/ws/${streamId}`
+  }
+  return `ws://localhost:3456/watch/${streamId}`
 }

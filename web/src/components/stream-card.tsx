@@ -4,12 +4,14 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import { Eye, Clock } from 'lucide-react'
 import { formatDuration } from '@/lib/utils'
+import { StreamPreview } from '@/components/stream-preview'
 import type { StreamInfo } from '@/lib/types'
 
 export function StreamCard({ stream }: { stream: StreamInfo }) {
   return (
-    <Link to={`/s/${stream.id}`}>
-      <Card className="hover:border-primary/50 transition-colors cursor-pointer">
+    <Link to={`/watch/${stream.id}`}>
+      <Card className="hover:border-primary/50 transition-colors cursor-pointer overflow-hidden">
+        <StreamPreview streamId={stream.id} />
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-2">
             <div className="flex items-center gap-2">

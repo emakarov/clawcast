@@ -5,6 +5,7 @@ import { EventLogger } from './clickhouse.js';
 import { config } from './config.js';
 import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { createStream as dbCreateStream, endStream as dbEndStream, type DbPool } from './db.js';
+import { startRecording, recordChunk, recordResize, stopRecording } from './recorder.js';
 
 export async function handleBroadcasterMessage(
   ws: WebSocket,
@@ -48,16 +49,17 @@ export async function handleBroadcasterMessage(
     };
 
     mgr.registerStream(streamId, ws, metadata);
+    startRecording(streamId, username, metadata.cols, metadata.rows);
 
     if (pool) {
       try {
         await dbCreateStream(pool, { id: streamId, ...metadata });
       } catch (err) {
-        console.error('[aistreamer] Failed to create stream in DB:', err);
+        console.error('[clawcast] Failed to create stream in DB:', err);
       }
     }
 
-    const url = `${config.baseUrl}/s/${streamId}`;
+    const url = `${config.baseUrl}/watch/${streamId}`;
     ws.send(JSON.stringify({ type: 'stream_started', stream_id: streamId, url }));
     return streamId;
   }
@@ -66,6 +68,9 @@ export async function handleBroadcasterMessage(
 
   if (msg.type === 'stream_end') {
     mgr.endStream(currentStreamId);
+    stopRecording(currentStreamId).catch((err) => {
+      console.error(`[clawcast] Recording upload failed for ${currentStreamId}:`, err);
+    });
     if (pool) { try { await dbEndStream(pool, currentStreamId); } catch {} }
     return null;
   }
@@ -73,9 +78,11 @@ export async function handleBroadcasterMessage(
   if (msg.ch === 'term') {
     if (msg.type === 'resize') {
       mgr.updateDimensions(currentStreamId, msg.cols as number, msg.rows as number);
+      recordResize(currentStreamId, msg.cols as number, msg.rows as number);
     } else if (msg.data) {
       const decoded = Buffer.from(msg.data as string, 'base64');
       mgr.appendToBuffer(currentStreamId, decoded);
+      recordChunk(currentStreamId, decoded);
     }
     mgr.broadcast(currentStreamId, rawMessage);
     logger.log(currentStreamId, 'term', rawMessage, (msg.ts as number) || Date.now());

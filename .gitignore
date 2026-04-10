@@ -1,3 +1,10 @@
 node_modules/
 dist/
 .superpowers/
+.claude/
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+test-stream.mjs

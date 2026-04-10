@@ -1,7 +1,6 @@
 import type WebSocket from 'ws';
 
 const MAX_BUFFER_BYTES = 1024 * 1024;
-const TERMINAL_RESET = '\x1bc';
 
 export interface StreamMetadata {
   title: string; agent: string; cols: number; rows: number;
@@ -62,9 +61,10 @@ export class StreamManager {
     if (!stream) return;
     stream.buffer = Buffer.concat([stream.buffer, data]);
     if (stream.buffer.length > MAX_BUFFER_BYTES) {
-      const half = Math.floor(stream.buffer.length / 2);
-      const reset = Buffer.from(TERMINAL_RESET);
-      stream.buffer = Buffer.concat([reset, stream.buffer.subarray(half)]);
+      // Trim from start without reset sequence to avoid flashing
+      // Keep last 75% of buffer instead of using a reset sequence
+      const keepFrom = Math.floor(stream.buffer.length * 0.25);
+      stream.buffer = stream.buffer.subarray(keepFrom);
     }
   }
 
